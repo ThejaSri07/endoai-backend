@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import torch, SimpleITK as sitk
 import numpy as np, tempfile, os, json
 from scipy import ndimage
-from supabase import create_client, Client
+from supabase import create_client
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
