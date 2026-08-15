@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import torch, SimpleITK as sitk
-import numpy as np, tempfile, os
+import numpy as np, tempfile, os, random
 from scipy import ndimage
 from passlib.context import CryptContext
 from jose import jwt, JWTError
