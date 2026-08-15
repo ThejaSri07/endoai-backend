@@ -421,8 +421,9 @@ def send_otp_email(to_email: str, otp_code: str, user_name: str = "Doctor"):
     pwd  = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
 
     if not user or not pwd:
-        print(f"[SMTP LOG] SMTP_USER/SMTP_PASS not set. Dispatch simulated for {to_email}. Code: {otp_code}")
-        return False
+        msg = f"SMTP configuration missing on Render: SMTP_USER is '{user}', SMTP_PASS length is {len(pwd)}"
+        print(f"[SMTP LOG] {msg}")
+        return False, msg
     try:
         import smtplib
         from email.mime.multipart import MIMEMultipart
@@ -451,16 +452,28 @@ def send_otp_email(to_email: str, otp_code: str, user_name: str = "Doctor"):
         """
         msg.attach(MIMEText(html_content, "html"))
 
-        server = smtplib.SMTP(host, port, timeout=15)
-        server.starttls()
-        server.login(user, pwd)
-        server.sendmail(user, to_email, msg.as_string())
-        server.quit()
+        # Try Port 587 first, fallback to SSL Port 465
+        try:
+            server = smtplib.SMTP(host, port, timeout=10)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(user, pwd)
+            server.sendmail(user, to_email, msg.as_string())
+            server.quit()
+        except Exception as e587:
+            print(f"[!] Port 587 failed ({e587}), attempting Port 465 SSL...")
+            server = smtplib.SMTP_SSL(host, 465, timeout=10)
+            server.login(user, pwd)
+            server.sendmail(user, to_email, msg.as_string())
+            server.quit()
+
         print(f"[+] Real email successfully dispatched to {to_email}")
-        return True
+        return True, "Email delivered successfully"
     except Exception as e:
-        print(f"[!] SMTP dispatch failed: {e}")
-        return False
+        err = f"SMTP Error ({type(e).__name__}): {str(e)}"
+        print(f"[!] {err}")
+        return False, err
 
 @app.post("/auth/send-otp")
 def send_otp(body: dict):
@@ -480,9 +493,9 @@ def send_otp(body: dict):
             "expires_at": datetime.utcnow() + timedelta(minutes=10)
         }
 
-        sent = send_otp_email(contact, code, user.get("name", "Doctor"))
+        sent, detail_msg = send_otp_email(contact, code, user.get("name", "Doctor"))
         if not sent:
-            raise HTTPException(500, "Failed to deliver verification email. Please ensure SMTP_USER and SMTP_PASS are set on Render.")
+            raise HTTPException(500, detail_msg)
 
         email_val = user.get("email", contact)
         parts = email_val.split("@")
