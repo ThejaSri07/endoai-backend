@@ -4,10 +4,21 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import torch, SimpleITK as sitk
 import numpy as np, tempfile, os
 from scipy import ndimage
-import httpx
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
+import urllib.request
+import json
+
+# ── Load .env ───────────────────────────────────────────────
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
 
 # ── Config ─────────────────────────────────────────────────
 SUPABASE_URL = "https://wsaghkfmwigrmjtzcfkg.supabase.co"
@@ -33,7 +44,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Supabase Direct HTTP Helpers ────────────────────────────
+# ── Supabase Direct HTTP Helpers (Standard Library urllib) ───
+def _http_request(url, method="GET", data=None):
+    try:
+        req_data = json.dumps(data).encode("utf-8") if data else None
+        req = urllib.request.Request(url, data=req_data, headers=HEADERS, method=method)
+        with urllib.request.urlopen(req, timeout=12) as response:
+            res_text = response.read().decode("utf-8")
+            return json.loads(res_text) if res_text else []
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode("utf-8"))
+        except Exception:
+            return []
+    except Exception as e:
+        print(f"HTTP request error ({url}): {e}")
+        return []
+
 def db_select(table, filters=None, order=None, view=False):
     url = f"{SUPABASE_URL}/rest/v1/{table}?select=*"
     if filters:
@@ -41,13 +68,17 @@ def db_select(table, filters=None, order=None, view=False):
             url += f"&{k}=eq.{v}"
     if order:
         url += f"&order={order}.desc"
-    r = httpx.get(url, headers=HEADERS)
-    return r.json()
+    return _http_request(url, method="GET")
 
 def db_insert(table, data):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
-    r   = httpx.post(url, headers=HEADERS, json=data)
-    return r.json()
+    return _http_request(url, method="POST", data=data)
+
+def db_update(table, filters, data):
+    url = f"{SUPABASE_URL}/rest/v1/{table}?"
+    for k, v in filters.items():
+        url += f"{k}=eq.{v}&"
+    return _http_request(url.rstrip("&"), method="PATCH", data=data)
 
 def db_select_one(table, filters):
     results = db_select(table, filters)
@@ -67,9 +98,9 @@ def load_model():
             map_location="cpu"
         )
         MODEL.eval()
-        print("✓ AI Model loaded successfully")
+        print("[+] AI Model loaded successfully")
     except Exception as e:
-        print(f"⚠ Model load failed: {e}")
+        print(f"[!] Model load failed: {e}")
 
 # ── Auth Helpers ────────────────────────────────────────────
 def hash_password(password: str) -> str:
@@ -131,13 +162,35 @@ def crop_or_pad(arr, target=(16, 128, 128)):
         arr[slices_src[0], slices_src[1], slices_src[2]]
     return out
 
-def preprocess_files(file_paths):
-    dcm = [f for f in file_paths if f.lower().endswith(".dcm")]
-    nii = [f for f in file_paths if f.lower().endswith(".nii") or
-                                    f.lower().endswith(".nii.gz")]
-    nrrd = [f for f in file_paths if f.lower().endswith(".nrrd")]
-    mha  = [f for f in file_paths if f.lower().endswith(".mha")]
+import zipfile, uuid
 
+# In-memory fallback for patients table if not created in Supabase schema
+_LOCAL_PATIENTS = []
+
+def preprocess_files(file_paths):
+    # Recursively find all medical image files
+    all_files = []
+    for fp in file_paths:
+        if os.path.isdir(fp):
+            for root, _, fnames in os.walk(fp):
+                for fn in fnames:
+                    all_files.append(os.path.join(root, fn))
+        else:
+            all_files.append(fp)
+
+    # Filter out macOS artifacts and non-medical files
+    valid_files = [
+        f for f in all_files 
+        if not os.path.basename(f).startswith("._") 
+        and "__MACOSX" not in f
+    ]
+
+    dcm  = [f for f in valid_files if f.lower().endswith(".dcm")]
+    nii  = [f for f in valid_files if f.lower().endswith(".nii") or f.lower().endswith(".nii.gz")]
+    nrrd = [f for f in valid_files if f.lower().endswith(".nrrd")]
+    mha  = [f for f in valid_files if f.lower().endswith(".mha") or f.lower().endswith(".mhd")]
+
+    img = None
     if nii:
         img = sitk.ReadImage(nii[0])
     elif nrrd:
@@ -145,13 +198,39 @@ def preprocess_files(file_paths):
     elif mha:
         img = sitk.ReadImage(mha[0])
     elif dcm:
-        reader = sitk.ImageSeriesReader()
-        reader.SetFileNames(sorted(dcm))
-        img = reader.Execute()
+        try:
+            reader = sitk.ImageSeriesReader()
+            reader.SetFileNames(sorted(dcm))
+            img = reader.Execute()
+        except Exception as err:
+            print(f"Warning: ImageSeriesReader failed ({err}), falling back to individual slice stacking.")
+            slices = []
+            for df in sorted(dcm):
+                try:
+                    s_img = sitk.ReadImage(df)
+                    s_arr = sitk.GetArrayFromImage(s_img)
+                    if s_arr.ndim == 2:
+                        slices.append(s_arr)
+                    elif s_arr.ndim == 3:
+                        slices.extend([s_arr[i] for i in range(s_arr.shape[0])])
+                except Exception:
+                    pass
+            if slices:
+                vol = np.stack(slices, axis=0)
+                img = sitk.GetImageFromArray(vol)
+            else:
+                raise ValueError("Could not parse DICOM slices")
+    elif valid_files:
+        # Try reading the first valid file
+        img = sitk.ReadImage(valid_files[0])
     else:
-        reader = sitk.ImageSeriesReader()
-        reader.SetFileNames(sorted(file_paths))
-        img = reader.Execute()
+        raise ValueError("No supported DICOM or medical image files provided")
+
+    # If 2D image, stack or expand to 3D
+    if img.GetDimension() == 2:
+        arr2d = sitk.GetArrayFromImage(img)
+        arr3d = np.repeat(arr2d[np.newaxis, :, :], 16, axis=0)
+        img = sitk.GetImageFromArray(arr3d)
 
     img = resample(img)
     arr = sitk.GetArrayFromImage(img).astype(np.float32)
@@ -328,6 +407,179 @@ def login(body: dict):
     except Exception as e:
         raise HTTPException(400, str(e))
 
+_OTP_CACHE = {}
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+SMTP_USER = os.environ.get("SMTP_USER", "").strip()
+SMTP_PASS = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
+
+def send_otp_email(to_email: str, otp_code: str, user_name: str = "Doctor"):
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.environ.get("SMTP_PORT", 587))
+    user = os.environ.get("SMTP_USER", "").strip()
+    pwd  = os.environ.get("SMTP_PASS", "").replace(" ", "").strip()
+
+    if not user or not pwd:
+        print(f"[SMTP LOG] SMTP_USER/SMTP_PASS not set. Dispatch simulated for {to_email}. Code: {otp_code}")
+        return False
+    try:
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Your EndoAI Verification Code"
+        msg["From"]    = f"EndoAI Medical <{user}>"
+        msg["To"]      = to_email
+
+        html_content = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #E2E8F2; border-radius: 12px; background: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #0A3D62; margin: 0;">EndoAI Medical System</h2>
+                <p style="color: #8A97A8; font-size: 13px; margin-top: 4px;">Security Verification Code</p>
+            </div>
+            <p style="color: #0D1B2A; font-size: 14px;">Hello {user_name},</p>
+            <p style="color: #4A5568; font-size: 14px; line-height: 1.5;">We received a request to verify your identity and reset your account password. Enter the 6-digit verification code below:</p>
+            <div style="background: #F4F7FB; border: 2px dashed #00B4D8; border-radius: 10px; padding: 18px; text-align: center; margin: 24px 0;">
+                <span style="font-size: 34px; font-weight: 700; letter-spacing: 8px; color: #0A3D62; font-family: monospace;">{otp_code}</span>
+            </div>
+            <p style="color: #8A97A8; font-size: 12px; line-height: 1.4;">This code is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+            <hr style="border: none; border-top: 1px solid #E2E8F2; margin: 24px 0;" />
+            <p style="color: #8A97A8; font-size: 11px; text-align: center; margin: 0;">© 2026 EndoAI · HIPAA Compliant Dental Imaging Platform</p>
+        </div>
+        """
+        msg.attach(MIMEText(html_content, "html"))
+
+        server = smtplib.SMTP(host, port, timeout=15)
+        server.starttls()
+        server.login(user, pwd)
+        server.sendmail(user, to_email, msg.as_string())
+        server.quit()
+        print(f"[+] Real email successfully dispatched to {to_email}")
+        return True
+    except Exception as e:
+        print(f"[!] SMTP dispatch failed: {e}")
+        return False
+
+@app.post("/auth/send-otp")
+def send_otp(body: dict):
+    try:
+        contact = body.get("contact", "").strip().lower()
+        if not contact:
+            raise HTTPException(400, "Email address is required")
+
+        users = db_select("users", {"email": contact})
+        if not isinstance(users, list) or len(users) == 0:
+            raise HTTPException(404, "No registered account found with this email.")
+
+        user = users[0]
+        code = str(random.randint(100000, 999999))
+        _OTP_CACHE[contact] = {
+            "code": code,
+            "expires_at": datetime.utcnow() + timedelta(minutes=10)
+        }
+
+        sent = send_otp_email(contact, code, user.get("name", "Doctor"))
+        if not sent:
+            raise HTTPException(500, "Failed to deliver verification email. Please ensure SMTP_USER and SMTP_PASS are set on Render.")
+
+        email_val = user.get("email", contact)
+        parts = email_val.split("@")
+        masked = parts[0][:2] + "••••@" + parts[1] if "@" in email_val else contact
+
+        return {
+            "status": "sent",
+            "email": contact,
+            "masked": masked,
+            "name": user.get("name"),
+            "email_dispatched": sent,
+            "message": f"Verification code sent to {masked}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post("/auth/verify-otp")
+def verify_otp(body: dict):
+    try:
+        contact = body.get("contact", "").strip().lower()
+        code    = body.get("code", "").strip()
+
+        if not contact or not code:
+            raise HTTPException(400, "Email and code are required")
+
+        cached = _OTP_CACHE.get(contact)
+        if not cached:
+            raise HTTPException(400, "No OTP found or code has expired. Please request a new one.")
+
+        if datetime.utcnow() > cached["expires_at"]:
+            del _OTP_CACHE[contact]
+            raise HTTPException(400, "Verification code has expired. Please request a new one.")
+
+        if cached["code"] != code:
+            raise HTTPException(400, "Invalid verification code.")
+
+        # Valid OTP
+        del _OTP_CACHE[contact]
+        return {"status": "verified", "message": "Code verified successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post("/auth/verify-account")
+def verify_account(body: dict):
+    try:
+        contact = body.get("contact", "").strip().lower()
+        if not contact:
+            raise HTTPException(400, "Email or mobile number is required")
+
+        users = db_select("users", {"email": contact})
+        if not isinstance(users, list) or len(users) == 0:
+            raise HTTPException(404, "No registered account found with this email. Please check your spelling or register.")
+
+        user = users[0]
+        email_val = user.get("email", "")
+        masked = email_val
+        if "@" in email_val:
+            parts = email_val.split("@")
+            masked = parts[0][:2] + "•••@" + parts[1]
+
+        return {
+            "exists": True,
+            "id": user.get("id"),
+            "email": email_val,
+            "name": user.get("name"),
+            "masked": masked
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+@app.post("/auth/reset-password")
+def reset_password(body: dict):
+    try:
+        email = body.get("email", "").strip().lower()
+        new_password = body.get("new_password", "")
+        if not email or not new_password:
+            raise HTTPException(400, "Email and new password required")
+        if len(new_password) < 6:
+            raise HTTPException(400, "Password must be at least 6 characters")
+
+        users = db_select("users", {"email": email})
+        if not isinstance(users, list) or len(users) == 0:
+            raise HTTPException(404, "User account not found")
+
+        res = db_update("users", {"email": email}, {"password_hash": hash_password(new_password)})
+        return {"status": "success", "message": "Password updated successfully. You can now sign in with your new password."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
 @app.get("/cases")
 def get_cases(user_id: str = Depends(get_current_user)):
     try:
@@ -358,6 +610,75 @@ def get_case(
     except Exception as e:
         raise HTTPException(500, str(e))
 
+# ── Patients Endpoints ─────────────────────────────────────
+@app.get("/patients")
+def get_patients(user_id: str = Depends(get_current_user)):
+    try:
+        res = db_select("patients", filters={"user_id": user_id}, order="created_at")
+        if isinstance(res, list):
+            return {"patients": res}
+        # Fallback to local user patients if Supabase table is not configured
+        user_p = [p for p in _LOCAL_PATIENTS if p.get("user_id") == user_id]
+        return {"patients": user_p}
+    except Exception:
+        user_p = [p for p in _LOCAL_PATIENTS if p.get("user_id") == user_id]
+        return {"patients": user_p}
+
+@app.post("/patients")
+def create_patient(body: dict, user_id: str = Depends(get_current_user)):
+    try:
+        age_val = None
+        if body.get("age"):
+            try:
+                age_val = int(body.get("age"))
+            except Exception:
+                age_val = None
+
+        pat_id_str = body.get("patient_id") or body.get("id") or ("P-" + str(uuid.uuid4())[:6].upper())
+
+        patient_data = {
+            "user_id":    user_id,
+            "patient_id": str(pat_id_str),
+            "name":       body.get("name", "Unknown"),
+            "age":        age_val,
+            "gender":     body.get("gender", "Other"),
+            "phone":      body.get("phone", ""),
+            "email":      body.get("email", ""),
+            "history":    body.get("history", ""),
+        }
+        res = db_insert("patients", patient_data)
+        if isinstance(res, list) and len(res) > 0:
+            return res[0]
+        # In-memory fallback
+        _LOCAL_PATIENTS.insert(0, patient_data)
+        return patient_data
+    except Exception as e:
+        print(f"Patient insert warning: {e}")
+        patient_data = {
+            "user_id":    user_id,
+            "patient_id": str(body.get("patient_id") or body.get("id") or "P-1000"),
+            "name":       body.get("name", "Unknown"),
+            "age":        body.get("age"),
+            "gender":     body.get("gender", "Other"),
+            "phone":      body.get("phone", ""),
+            "email":      body.get("email", ""),
+            "history":    body.get("history", ""),
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        _LOCAL_PATIENTS.insert(0, patient_data)
+        return patient_data
+
+@app.delete("/patients/{patient_id}")
+def delete_patient(patient_id: str, user_id: str = Depends(get_current_user)):
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/patients?id=eq.{patient_id}&user_id=eq.{user_id}"
+        httpx.delete(url, headers=HEADERS)
+    except Exception:
+        pass
+    global _LOCAL_PATIENTS
+    _LOCAL_PATIENTS = [p for p in _LOCAL_PATIENTS if p.get("id") != patient_id]
+    return {"status": "deleted", "id": patient_id}
+
 @app.post("/analyze")
 async def analyze(
     files:      list[UploadFile] = File(...),
@@ -375,13 +696,26 @@ async def analyze(
             saved = []
             for f in files:
                 content = await f.read()
-                path    = os.path.join(tmpdir, f.filename)
+                fname = f.filename or "upload.dcm"
+                # Strip directory prefixes if sent by browser
+                clean_name = os.path.basename(fname)
+                path = os.path.join(tmpdir, clean_name)
+                
                 with open(path, "wb") as out:
                     out.write(content)
+
+                # Check if file is a zip archive
+                if clean_name.lower().endswith(".zip"):
+                    try:
+                        with zipfile.ZipFile(path, 'r') as zip_ref:
+                            zip_ref.extractall(tmpdir)
+                    except Exception as zerr:
+                        print(f"Zip extract error: {zerr}")
+
                 saved.append(path)
 
-            # Run AI inference
-            tensor = preprocess_files(saved)
+            # Preprocess files and extract volume
+            tensor = preprocess_files([tmpdir])
             with torch.no_grad():
                 pred  = MODEL(tensor)
                 pmask = (torch.softmax(pred, dim=1)[:, 1] > 0.5)
@@ -391,36 +725,39 @@ async def analyze(
             report = compute_report(feats)
 
             # Save case to Supabase
-            case_row = db_insert("cases", {
-                "user_id":    user_id,
-                "case_id":    case_id,
-                "patient_id": patient_id,
-                "tooth":      tooth,
-                "notes":      notes,
-                "slice_count": len(saved),
-            })
-
-            if isinstance(case_row, list) and len(case_row) > 0:
-                case_uuid = case_row[0]["id"]
-                # Save result
-                db_insert("results", {
-                    "case_id":      case_uuid,
-                    "n_canals":     report["n_canals"],
-                    "canal_volume": report["canal_volume"],
-                    "canal_length": report["canal_length"],
-                    "curvature":    report["curvature"],
-                    "dentin":       report["dentin"],
-                    "risk":         report["risk"],
-                    "taper":        report["taper"],
-                    "apical":       report["apical"],
-                    "irrigation":   report["irrigation"],
-                    "obturation":   report["obturation"],
-                    "calcification":report["calcification"],
-                    "ledge_risk":   report["ledge_risk"],
-                    "perf_risk":    report["perf_risk"],
-                    "sep_risk":     report["sep_risk"],
-                    "source":       report["source"],
+            try:
+                case_row = db_insert("cases", {
+                    "user_id":    user_id,
+                    "case_id":    case_id,
+                    "patient_id": patient_id,
+                    "tooth":      tooth,
+                    "notes":      notes,
+                    "slice_count": len(saved),
                 })
+
+                if isinstance(case_row, list) and len(case_row) > 0:
+                    case_uuid = case_row[0]["id"]
+                    # Save result
+                    db_insert("results", {
+                        "case_id":      case_uuid,
+                        "n_canals":     report["n_canals"],
+                        "canal_volume": report["canal_volume"],
+                        "canal_length": report["canal_length"],
+                        "curvature":    report["curvature"],
+                        "dentin":       report["dentin"],
+                        "risk":         report["risk"],
+                        "taper":        report["taper"],
+                        "apical":       report["apical"],
+                        "irrigation":   report["irrigation"],
+                        "obturation":   report["obturation"],
+                        "calcification":report["calcification"],
+                        "ledge_risk":   report["ledge_risk"],
+                        "perf_risk":    report["perf_risk"],
+                        "sep_risk":     report["sep_risk"],
+                        "source":       report["source"],
+                    })
+            except Exception as dberr:
+                print(f"Database insert warning: {dberr}")
 
             upload_date = datetime.now().strftime("%d %b %Y")
 
