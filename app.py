@@ -409,6 +409,34 @@ def login(body: dict):
 
 _OTP_CACHE = {}
 
+def _save_otp_cache():
+    try:
+        import json
+        with open("/tmp/endoai_otp_cache.json", "w") as f:
+            cache_serializable = {
+                k: {"code": v["code"], "expires_at": v["expires_at"].isoformat()}
+                for k, v in _OTP_CACHE.items()
+            }
+            json.dump(cache_serializable, f)
+    except Exception as e:
+        print(f"OTP cache save warning: {e}")
+
+def _load_otp_cache():
+    try:
+        import json
+        if not os.path.exists("/tmp/endoai_otp_cache.json"):
+            return
+        with open("/tmp/endoai_otp_cache.json") as f:
+            data = json.load(f)
+        for k, v in data.items():
+            exp = datetime.fromisoformat(v["expires_at"])
+            if exp > datetime.utcnow():
+                _OTP_CACHE[k] = {"code": v["code"], "expires_at": exp}
+    except Exception as e:
+        print(f"OTP cache load warning: {e}")
+
+_load_otp_cache()
+
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 SMTP_USER = os.environ.get("SMTP_USER", "").strip()
@@ -492,6 +520,7 @@ def send_otp(body: dict):
             "code": code,
             "expires_at": datetime.utcnow() + timedelta(minutes=10)
         }
+        _save_otp_cache()
 
         sent, detail_msg = send_otp_email(contact, code, user.get("name", "Doctor"))
         if not sent:
@@ -536,6 +565,7 @@ def verify_otp(body: dict):
 
         # Valid OTP
         del _OTP_CACHE[contact]
+        _save_otp_cache()
         return {"status": "verified", "message": "Code verified successfully"}
     except HTTPException:
         raise
