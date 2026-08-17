@@ -324,17 +324,60 @@ def health():
         "model_loaded": MODEL is not None
     }
 
+# ── Security Questions Pool (25 questions) ────────────────────
+SECURITY_QUESTIONS_POOL = [
+    "What was the name of your first pet?",
+    "What is your mother's maiden name?",
+    "What city were you born in?",
+    "What was the name of your primary school?",
+    "What is the name of the street you grew up on?",
+    "What was your childhood nickname?",
+    "What is your oldest sibling's middle name?",
+    "What was the make of your first car?",
+    "In what city did your parents meet?",
+    "What was the name of your first stuffed animal?",
+    "What is the middle name of your youngest child?",
+    "What was the name of the hospital where you were born?",
+    "What is your favourite childhood movie?",
+    "What was your favourite subject in school?",
+    "What is the name of your favourite sports team?",
+    "What was the first concert you attended?",
+    "What is the name of the company of your first job?",
+    "What is your paternal grandfather's first name?",
+    "What is your maternal grandmother's first name?",
+    "What was the model of your first mobile phone?",
+    "What is the name of your favourite childhood friend?",
+    "What is your favourite food?",
+    "What is the name of the town your mother grew up in?",
+    "What was the name of your favourite teacher?",
+    "What is your favourite colour?",
+]
+
+def get_random_3_questions():
+    """Pick 3 unique random questions from the pool."""
+    return random.sample(SECURITY_QUESTIONS_POOL, 3)
+
+# ── Register ──────────────────────────────────────────────────
 @app.post("/auth/register")
 def register(body: dict):
     try:
         name        = body.get("name", "")
-        email       = body.get("email", "")
+        email       = body.get("email", "").strip().lower()
         password    = body.get("password", "")
         designation = body.get("designation", "")
         clinic      = body.get("clinic", "")
+        # Security questions
+        question_1  = body.get("question_1", "")
+        answer_1    = body.get("answer_1", "").strip().lower()
+        question_2  = body.get("question_2", "")
+        answer_2    = body.get("answer_2", "").strip().lower()
+        question_3  = body.get("question_3", "")
+        answer_3    = body.get("answer_3", "").strip().lower()
 
         if not all([name, email, password]):
             raise HTTPException(400, "Name, email and password are required")
+        if not all([question_1, answer_1, question_2, answer_2, question_3, answer_3]):
+            raise HTTPException(400, "All 3 security questions and answers are required")
 
         # Check existing user
         existing = db_select("users", {"email": email})
@@ -353,9 +396,20 @@ def register(body: dict):
         if not result or not isinstance(result, list):
             raise HTTPException(500, "Failed to create user")
 
-        user  = result[0]
-        token = create_token(user["id"])
+        user = result[0]
 
+        # Save security questions with hashed answers
+        db_insert("security_questions", {
+            "user_id":      user["id"],
+            "question_1":   question_1,
+            "answer_1_hash": hash_password(answer_1),
+            "question_2":   question_2,
+            "answer_2_hash": hash_password(answer_2),
+            "question_3":   question_3,
+            "answer_3_hash": hash_password(answer_3),
+        })
+
+        token = create_token(user["id"])
         return {
             "token": token,
             "user": {
@@ -366,6 +420,109 @@ def register(body: dict):
                 "clinic":      clinic,
             }
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+# ── Get random 3 questions for registration ───────────────────
+@app.get("/auth/security-questions/random")
+def get_security_questions():
+    return {"questions": get_random_3_questions()}
+
+# ── Forgot Password Step 1: Verify email + return questions ───
+@app.post("/auth/forgot/verify-email")
+def forgot_verify_email(body: dict):
+    try:
+        email = body.get("email", "").strip().lower()
+        if not email:
+            raise HTTPException(400, "Email is required")
+
+        users = db_select("users", {"email": email})
+        if not isinstance(users, list) or len(users) == 0:
+            raise HTTPException(404, "No account found with this email address")
+
+        user = users[0]
+        sq   = db_select("security_questions", {"user_id": user["id"]})
+        if not isinstance(sq, list) or len(sq) == 0:
+            raise HTTPException(404, "No security questions found for this account")
+
+        q = sq[0]
+        return {
+            "user_id":    user["id"],
+            "question_1": q["question_1"],
+            "question_2": q["question_2"],
+            "question_3": q["question_3"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+# ── Forgot Password Step 2: Verify answers ────────────────────
+@app.post("/auth/forgot/verify-answers")
+def forgot_verify_answers(body: dict):
+    try:
+        email    = body.get("email", "").strip().lower()
+        answer_1 = body.get("answer_1", "").strip().lower()
+        answer_2 = body.get("answer_2", "").strip().lower()
+        answer_3 = body.get("answer_3", "").strip().lower()
+
+        if not all([email, answer_1, answer_2, answer_3]):
+            raise HTTPException(400, "Email and all 3 answers are required")
+
+        users = db_select("users", {"email": email})
+        if not isinstance(users, list) or len(users) == 0:
+            raise HTTPException(404, "Account not found")
+
+        user = users[0]
+        sq   = db_select("security_questions", {"user_id": user["id"]})
+        if not isinstance(sq, list) or len(sq) == 0:
+            raise HTTPException(404, "Security questions not found")
+
+        q = sq[0]
+
+        # Verify all 3 answers (case-insensitive via .lower() before hash check)
+        if not (
+            verify_password(answer_1, q["answer_1_hash"]) and
+            verify_password(answer_2, q["answer_2_hash"]) and
+            verify_password(answer_3, q["answer_3_hash"])
+        ):
+            raise HTTPException(401, "One or more answers are incorrect")
+
+        # Generate a short-lived reset token
+        reset_token = create_token(user["id"])
+        return {
+            "success":      True,
+            "reset_token":  reset_token,
+            "message":      "Answers verified. You may now reset your password."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+# ── Forgot Password Step 3: Reset password ────────────────────
+@app.post("/auth/forgot/reset-password")
+def forgot_reset_password(body: dict):
+    try:
+        email        = body.get("email", "").strip().lower()
+        new_password = body.get("new_password", "")
+
+        if not email or not new_password:
+            raise HTTPException(400, "Email and new password are required")
+        if len(new_password) < 6:
+            raise HTTPException(400, "Password must be at least 6 characters")
+
+        users = db_select("users", {"email": email})
+        if not isinstance(users, list) or len(users) == 0:
+            raise HTTPException(404, "Account not found")
+
+        db_update("users", {"email": email}, {
+            "password_hash": hash_password(new_password)
+        })
+
+        return {"status": "success", "message": "Password updated successfully"}
     except HTTPException:
         raise
     except Exception as e:
@@ -718,7 +875,7 @@ def create_patient(body: dict, user_id: str = Depends(get_current_user)):
 def delete_patient(patient_id: str, user_id: str = Depends(get_current_user)):
     try:
         url = f"{SUPABASE_URL}/rest/v1/patients?id=eq.{patient_id}&user_id=eq.{user_id}"
-        _http_request(url, method="DELETE")
+        httpx.delete(url, headers=HEADERS)
     except Exception:
         pass
     global _LOCAL_PATIENTS
