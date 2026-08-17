@@ -525,12 +525,26 @@ def forgot_reset_password(body: dict):
 
         if not email or not new_password:
             raise HTTPException(400, "Email and new password are required")
-        if len(new_password) < 6:
-            raise HTTPException(400, "Password must be at least 6 characters")
+
+        import re
+        pw_checks = {
+            "at least 8 characters": len(new_password) >= 8,
+            "an uppercase letter":   bool(re.search(r"[A-Z]", new_password)),
+            "a lowercase letter":    bool(re.search(r"[a-z]", new_password)),
+            "a number":              bool(re.search(r"[0-9]", new_password)),
+            "a symbol":              bool(re.search(r"[^A-Za-z0-9]", new_password)),
+        }
+        missing = [k for k, ok in pw_checks.items() if not ok]
+        if missing:
+            raise HTTPException(400, f"Password needs: {', '.join(missing)}.")
 
         users = db_select("users", {"email": email})
         if not isinstance(users, list) or len(users) == 0:
             raise HTTPException(404, "Account not found")
+
+        user = users[0]
+        if verify_password(new_password, user["password_hash"]):
+            raise HTTPException(400, "New password must be different from your old password.")
 
         db_update("users", {"email": email}, {
             "password_hash": hash_password(new_password)
