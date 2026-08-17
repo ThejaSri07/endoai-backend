@@ -376,6 +376,20 @@ def register(body: dict):
 
         if not all([name, email, password]):
             raise HTTPException(400, "Name, email and password are required")
+
+        # Enforce strong password server-side too (frontend check can be bypassed)
+        import re
+        pw_checks = {
+            "at least 8 characters": len(password) >= 8,
+            "an uppercase letter":   bool(re.search(r"[A-Z]", password)),
+            "a lowercase letter":    bool(re.search(r"[a-z]", password)),
+            "a number":              bool(re.search(r"[0-9]", password)),
+            "a symbol":              bool(re.search(r"[^A-Za-z0-9]", password)),
+        }
+        missing = [k for k, ok in pw_checks.items() if not ok]
+        if missing:
+            raise HTTPException(400, f"Password needs: {', '.join(missing)}.")
+
         if not all([question_1, answer_1, question_2, answer_2, question_3, answer_3]):
             raise HTTPException(400, "All 3 security questions and answers are required")
 
