@@ -86,6 +86,20 @@ def db_select_one(table, filters):
         return results[0]
     return None
 
+def deidentify_dicom_file(path: str):
+    """Sanitize HIPAA fields in DICOM files if pydicom is available"""
+    try:
+        import pydicom
+        if path.lower().endswith(".dcm"):
+            ds = pydicom.dcmread(path, force=True)
+            ds.PatientName = "ANONYMOUS"
+            ds.PatientID = "ANON"
+            ds.PatientBirthDate = ""
+            ds.InstitutionName = "CLINIC"
+            ds.save_as(path)
+    except Exception:
+        pass
+
 # ── Model ───────────────────────────────────────────────────
 MODEL = None
 
