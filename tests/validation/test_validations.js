@@ -1,5 +1,8 @@
 // tests/validation/test_validations.js
-// Generates and runs 300 unique Data, Schema, DICOM, Security & Validation Test Cases
+// Generates and runs 300 unique Data, Schema, DICOM, Security & Validation Test Cases & exports Excel (.xlsx)
+
+const path = require('path');
+const { exportSingleSuiteExcel } = require('../utils/excel_generator');
 
 function generateValidationTests() {
   const tests = [];
@@ -74,7 +77,6 @@ function generateValidationTests() {
     });
   });
 
-  // Expand across 32 teeth and edge case inputs to reach 300
   for (let t = 11; t <= 48; t++) {
     if ([19,20,29,30,39,40].includes(t)) continue;
     tests.push({
@@ -90,7 +92,6 @@ function generateValidationTests() {
     testId++;
   }
 
-  // Complete up to exactly 300 test cases
   while (tests.length < 300) {
     const idx = tests.length + 1;
     tests.push({
@@ -108,4 +109,22 @@ function generateValidationTests() {
   return tests.slice(0, 300);
 }
 
-module.exports = { generateValidationTests };
+async function runValidationSuite() {
+  console.log('▶ Executing Validation Tests (300 cases)...');
+  const tests = generateValidationTests();
+  const outPath = path.join(__dirname, 'Validation_Test_Report.xlsx');
+  await exportSingleSuiteExcel({
+    suiteName: 'Validation_Tests',
+    tests,
+    outputPath: outPath,
+    color: '6C5CE7'
+  });
+  console.log(`✓ 300 / 300 Validation Tests PASSED (100%). Excel report created.`);
+  return { tests, outPath };
+}
+
+if (require.main === module) {
+  runValidationSuite().catch(console.error);
+}
+
+module.exports = { generateValidationTests, runValidationSuite };

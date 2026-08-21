@@ -24,19 +24,15 @@ jobs:
         run: |
           npm install exceljs selenium-webdriver
 
-      - name: Run Selenium Website E2E Tests (300 Cases)
+      - name: Run Selenium Website E2E Tests & Generate Excel
         run: |
-          node -e "
-          const { generateSeleniumWebTests } = require('./tests/selenium_web/test_web_e2e');
-          const tests = generateSeleniumWebTests();
-          console.log('Executed ' + tests.length + ' Selenium Website Tests successfully. Status: 100% PASSED');
-          "
+          node tests/selenium_web/test_web_e2e.js
 
-      - name: Upload Selenium Report Artifact
+      - name: Upload Selenium Excel Report
         uses: actions/upload-artifact@v4
         with:
           name: selenium-web-report
-          path: tests/selenium_web/
+          path: tests/selenium_web/Selenium_Website_Test_Report.xlsx
 
   appium-android-tests:
     name: Appium — Android Tests (300)
@@ -54,19 +50,15 @@ jobs:
         run: |
           npm install exceljs @wdio/appium-service webdriverio
 
-      - name: Run Appium Android Mobile E2E Tests (300 Cases)
+      - name: Run Appium Android Mobile E2E Tests & Generate Excel
         run: |
-          node -e "
-          const { generateAppiumMobileTests } = require('./tests/appium_mobile/test_mobile_appium');
-          const tests = generateAppiumMobileTests();
-          console.log('Executed ' + tests.length + ' Appium Android Tests successfully. Status: 100% PASSED');
-          "
+          node tests/appium_mobile/test_mobile_appium.js
 
-      - name: Upload Appium Mobile Report Artifact
+      - name: Upload Appium Mobile Excel Report
         uses: actions/upload-artifact@v4
         with:
           name: appium-android-report
-          path: tests/appium_mobile/
+          path: tests/appium_mobile/Appium_Android_Test_Report.xlsx
 
   unit-api-tests:
     name: Unit Tests — API (300)
@@ -75,28 +67,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: 18
 
-      - name: Install Python Dependencies
+      - name: Install Dependencies
         run: |
-          pip install -r requirements.txt pytest httpx
+          npm install exceljs
 
-      - name: Run Unit & API Endpoint Tests (300 Cases)
+      - name: Run Unit & API Endpoint Tests & Generate Excel
         run: |
-          node -e "
-          const { generateUnitAPITests } = require('./tests/unit_api/test_api_units');
-          const tests = generateUnitAPITests();
-          console.log('Executed ' + tests.length + ' Unit & API Tests successfully. Status: 100% PASSED');
-          "
+          node tests/unit_api/test_api_units.js
 
-      - name: Upload Unit Test Report Artifact
+      - name: Upload Unit Test Excel Report
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-report
-          path: tests/unit_api/
+          path: tests/unit_api/Unit_API_Test_Report.xlsx
 
   validation-tests:
     name: Validation Tests (300)
@@ -114,19 +102,15 @@ jobs:
         run: |
           npm install exceljs
 
-      - name: Run Data & Security Validation Tests (300 Cases)
+      - name: Run Data & Security Validation Tests & Generate Excel
         run: |
-          node -e "
-          const { generateValidationTests } = require('./tests/validation/test_validations');
-          const tests = generateValidationTests();
-          console.log('Executed ' + tests.length + ' Validation Tests successfully. Status: 100% PASSED');
-          "
+          node tests/validation/test_validations.js
 
-      - name: Upload Validation Report Artifact
+      - name: Upload Validation Excel Report
         uses: actions/upload-artifact@v4
         with:
           name: validation-test-report
-          path: tests/validation/
+          path: tests/validation/Validation_Test_Report.xlsx
 
   deployment-status:
     name: Deployment Status (300)
@@ -144,19 +128,15 @@ jobs:
         run: |
           npm install exceljs
 
-      - name: Run Production Deployment & Cloud Readiness Verification (300 Cases)
+      - name: Run Production Deployment Verification & Generate Excel
         run: |
-          node -e "
-          const { generateDeploymentTests } = require('./tests/deployment/test_deployment');
-          const tests = generateDeploymentTests();
-          console.log('Executed ' + tests.length + ' Deployment Verification Tests. Status: PRODUCTION READY / DEPLOYABLE');
-          "
+          node tests/deployment/test_deployment.js
 
-      - name: Upload Deployment Report Artifact
+      - name: Upload Deployment Excel Report
         uses: actions/upload-artifact@v4
         with:
           name: deployment-test-report
-          path: tests/deployment/
+          path: tests/deployment/Deployment_Status_Report.xlsx
 
   load-testing-performance:
     name: Load Testing — Performance (300)
@@ -174,18 +154,15 @@ jobs:
         run: |
           npm install exceljs
 
-      - name: Run Baseline Load Testing (100 Concurrent Users · 1 Minute)
+      - name: Run Baseline Load Testing & Generate Excel
         run: |
-          node -e "
-          const { runBaselineLoadTest } = require('./tests/load_testing/test_load_baseline');
-          runBaselineLoadTest();
-          "
+          node tests/load_testing/test_load_baseline.js
 
-      - name: Upload Load Test Report Artifact
+      - name: Upload Load Test Excel Report
         uses: actions/upload-artifact@v4
         with:
           name: load-test-report
-          path: tests/load_testing/
+          path: tests/load_testing/Load_Performance_Test_Report.xlsx
 
   compile-master-report:
     name: Compile Master Report & Deploy

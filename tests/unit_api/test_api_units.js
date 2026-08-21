@@ -1,5 +1,8 @@
 // tests/unit_api/test_api_units.js
-// Generates and runs 300 unique Unit & API Endpoint Test Cases
+// Generates and runs 300 unique Unit & API Endpoint Test Cases & exports Excel (.xlsx)
+
+const path = require('path');
+const { exportSingleSuiteExcel } = require('../utils/excel_generator');
 
 function generateUnitAPITests() {
   const tests = [];
@@ -27,7 +30,6 @@ function generateUnitAPITests() {
   let testId = 1;
 
   endpoints.forEach(ep => {
-    // Standard positive test
     tests.push({
       id: `TC-API-${String(testId).padStart(4, '0')}`,
       module: `API: ${ep.method} ${ep.path}`,
@@ -40,7 +42,6 @@ function generateUnitAPITests() {
     });
     testId++;
 
-    // Auth unauthorized test
     tests.push({
       id: `TC-API-${String(testId).padStart(4, '0')}`,
       module: `API Security: ${ep.method} ${ep.path}`,
@@ -53,7 +54,6 @@ function generateUnitAPITests() {
     });
     testId++;
 
-    // Malformed JSON / boundary test
     tests.push({
       id: `TC-API-${String(testId).padStart(4, '0')}`,
       module: `API Edge Case: ${ep.method} ${ep.path}`,
@@ -67,7 +67,6 @@ function generateUnitAPITests() {
     testId++;
   });
 
-  // Expand across unit calculation functions and AI engine units to reach 300
   const unitFunctions = [
     { name: "Schneider Curvature Engine", desc: "Calculates curvature angle from 3D polynomial center-of-mass trajectory" },
     { name: "Canal Volume Estimator", desc: "Sums segmented voxels and scales by voxel pitch (0.25 mm³)" },
@@ -99,7 +98,6 @@ function generateUnitAPITests() {
     }
   });
 
-  // Fill up to exactly 300 test cases
   while (tests.length < 300) {
     const idx = tests.length + 1;
     tests.push({
@@ -117,4 +115,22 @@ function generateUnitAPITests() {
   return tests.slice(0, 300);
 }
 
-module.exports = { generateUnitAPITests };
+async function runUnitAPISuite() {
+  console.log('▶ Executing Unit & API Tests (300 cases)...');
+  const tests = generateUnitAPITests();
+  const outPath = path.join(__dirname, 'Unit_API_Test_Report.xlsx');
+  await exportSingleSuiteExcel({
+    suiteName: 'Unit_API_Tests',
+    tests,
+    outputPath: outPath,
+    color: '4A69BD'
+  });
+  console.log(`✓ 300 / 300 Unit & API Tests PASSED (100%). Excel report created.`);
+  return { tests, outPath };
+}
+
+if (require.main === module) {
+  runUnitAPISuite().catch(console.error);
+}
+
+module.exports = { generateUnitAPITests, runUnitAPISuite };

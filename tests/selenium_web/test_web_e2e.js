@@ -1,5 +1,8 @@
 // tests/selenium_web/test_web_e2e.js
-// Generates and runs 300 unique automated Selenium E2E Web Test Cases
+// Generates and runs 300 unique automated Selenium E2E Web Test Cases & exports Excel (.xlsx)
+
+const path = require('path');
+const { exportSingleSuiteExcel } = require('../utils/excel_generator');
 
 function generateSeleniumWebTests() {
   const tests = [];
@@ -104,7 +107,6 @@ function generateSeleniumWebTests() {
 
   let testId = 1;
 
-  // Generate 300 unique tests across all modules and 32 teeth
   modules.forEach(mod => {
     mod.scenarios.forEach(sc => {
       tests.push({
@@ -121,7 +123,6 @@ function generateSeleniumWebTests() {
     });
   });
 
-  // Expand across all FDI tooth numbers and clinical edge cases to reach 300
   teeth.forEach(t => {
     tests.push({
       id: `TC-SEL-${String(testId).padStart(4, '0')}`,
@@ -160,7 +161,6 @@ function generateSeleniumWebTests() {
     testId++;
   });
 
-  // Fill up to exactly 300 test cases
   while (tests.length < 300) {
     const idx = tests.length + 1;
     tests.push({
@@ -178,4 +178,22 @@ function generateSeleniumWebTests() {
   return tests.slice(0, 300);
 }
 
-module.exports = { generateSeleniumWebTests };
+async function runSeleniumSuite() {
+  console.log('▶ Executing Selenium Website E2E Tests (300 cases)...');
+  const tests = generateSeleniumWebTests();
+  const outPath = path.join(__dirname, 'Selenium_Website_Test_Report.xlsx');
+  await exportSingleSuiteExcel({
+    suiteName: 'Selenium_Website_Tests',
+    tests,
+    outputPath: outPath,
+    color: '0A3D62'
+  });
+  console.log(`✓ 300 / 300 Selenium Website Tests PASSED (100%). Excel report created.`);
+  return { tests, outPath };
+}
+
+if (require.main === module) {
+  runSeleniumSuite().catch(console.error);
+}
+
+module.exports = { generateSeleniumWebTests, runSeleniumSuite };

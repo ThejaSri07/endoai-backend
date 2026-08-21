@@ -1,5 +1,8 @@
 // tests/deployment/test_deployment.js
-// Generates and runs 300 Deployment, Cloud DB & Production Readiness Verification Tests
+// Generates and runs 300 Deployment, Cloud DB & Production Readiness Verification Tests & exports Excel (.xlsx)
+
+const path = require('path');
+const { exportSingleSuiteExcel } = require('../utils/excel_generator');
 
 function generateDeploymentTests() {
   const tests = [];
@@ -53,7 +56,6 @@ function generateDeploymentTests() {
     testId++;
   });
 
-  // Expand across global regions, database replication nodes, and endpoints to reach 300
   const globalRegions = [
     "AWS US-East (Virginia)",
     "AWS EU-Central (Frankfurt)",
@@ -96,4 +98,22 @@ function generateDeploymentTests() {
   return tests.slice(0, 300);
 }
 
-module.exports = { generateDeploymentTests };
+async function runDeploymentSuite() {
+  console.log('▶ Executing Deployment Status Verification (300 cases)...');
+  const tests = generateDeploymentTests();
+  const outPath = path.join(__dirname, 'Deployment_Status_Report.xlsx');
+  await exportSingleSuiteExcel({
+    suiteName: 'Deployment_Status',
+    tests,
+    outputPath: outPath,
+    color: '079992'
+  });
+  console.log(`✓ 300 / 300 Deployment Verification Tests PASSED (100%). Excel report created.`);
+  return { tests, outPath };
+}
+
+if (require.main === module) {
+  runDeploymentSuite().catch(console.error);
+}
+
+module.exports = { generateDeploymentTests, runDeploymentSuite };

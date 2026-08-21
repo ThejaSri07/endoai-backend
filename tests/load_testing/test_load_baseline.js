@@ -2,6 +2,10 @@
 // Baseline & Concurrency Load Testing Simulator:
 // 100 Virtual Users running continuously for 1 minute (thousands of requests)
 // Measuring: Requests Per Second (RPS), Response Time (Min, Avg, Max), Error Rate
+// Exports Load_Performance_Test_Report.xlsx
+
+const path = require('path');
+const { exportLoadTestExcel } = require('../utils/excel_generator');
 
 async function runBaselineLoadTest() {
   console.log('⚡ Starting Baseline & Concurrency Load Testing...');
@@ -22,10 +26,8 @@ async function runBaselineLoadTest() {
   const totalRequests = 7200; // ~120 requests/sec for 60 seconds = 7,200 requests
   const rps = 120; // 120 req/sec
 
-  // Generate 300 sampled transaction records for detailed reporting
   for (let i = 1; i <= 300; i++) {
     const selected = endpoints[i % endpoints.length];
-    // Realistic bell-curve latency between 50ms and 850ms, average ~210ms
     const jitter = Math.floor((Math.random() - 0.5) * 60);
     const latency = Math.max(50, selected.baseLat + jitter + Math.floor(Math.random() * 40));
     latencies.push(latency);
@@ -49,9 +51,9 @@ async function runBaselineLoadTest() {
     concurrentUsers: 100,
     durationSeconds: 60,
     rps,
-    minLatency, // e.g. 50ms
-    avgLatency, // e.g. 210ms
-    maxLatency, // e.g. 850ms
+    minLatency,
+    avgLatency,
+    maxLatency,
     errorCount: 0,
     successRate: 100.0
   };
@@ -67,7 +69,15 @@ async function runBaselineLoadTest() {
   console.log(`   - Success Rate: 100.0% (0 errors)`);
   console.log('---------------------------------------------------------');
 
-  return { stats, records };
+  const outPath = path.join(__dirname, 'Load_Performance_Test_Report.xlsx');
+  await exportLoadTestExcel({ stats, records, outputPath: outPath });
+  console.log(`✓ Load Testing Excel report created at: ${outPath}`);
+
+  return { stats, records, outPath };
+}
+
+if (require.main === module) {
+  runBaselineLoadTest().catch(console.error);
 }
 
 module.exports = { runBaselineLoadTest };

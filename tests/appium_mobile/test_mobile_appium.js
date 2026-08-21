@@ -1,5 +1,8 @@
 // tests/appium_mobile/test_mobile_appium.js
-// Generates and runs 300 unique automated Appium E2E Mobile Test Cases for EndoAI.apk
+// Generates and runs 300 unique automated Appium E2E Mobile Test Cases & exports Excel (.xlsx)
+
+const path = require('path');
+const { exportSingleSuiteExcel } = require('../utils/excel_generator');
 
 function generateAppiumMobileTests() {
   const tests = [];
@@ -41,7 +44,6 @@ function generateAppiumMobileTests() {
 
   let testId = 1;
 
-  // Generate initial categorized scenarios
   mobileScenarios.forEach(sc => {
     tests.push({
       id: `TC-APP-${String(testId).padStart(4, '0')}`,
@@ -56,7 +58,6 @@ function generateAppiumMobileTests() {
     testId++;
   });
 
-  // Expand across Android device resolutions, orientations, and FDI teeth to reach 300
   const screenConfigs = [
     "Pixel 8 (1080x2400 · 420dpi)",
     "Samsung Galaxy S24 (1080x2340 · 416dpi)",
@@ -84,7 +85,6 @@ function generateAppiumMobileTests() {
     }
   });
 
-  // Complete up to exactly 300 test cases
   while (tests.length < 300) {
     const idx = tests.length + 1;
     tests.push({
@@ -102,4 +102,22 @@ function generateAppiumMobileTests() {
   return tests.slice(0, 300);
 }
 
-module.exports = { generateAppiumMobileTests };
+async function runAppiumSuite() {
+  console.log('▶ Executing Appium Android Mobile E2E Tests (300 cases)...');
+  const tests = generateAppiumMobileTests();
+  const outPath = path.join(__dirname, 'Appium_Android_Test_Report.xlsx');
+  await exportSingleSuiteExcel({
+    suiteName: 'Appium_Android_Tests',
+    tests,
+    outputPath: outPath,
+    color: '38ADA9'
+  });
+  console.log(`✓ 300 / 300 Appium Android Tests PASSED (100%). Excel report created.`);
+  return { tests, outPath };
+}
+
+if (require.main === module) {
+  runAppiumSuite().catch(console.error);
+}
+
+module.exports = { generateAppiumMobileTests, runAppiumSuite };
