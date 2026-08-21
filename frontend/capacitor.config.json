@@ -1,0 +1,12 @@
+{
+  "appId": "com.endoai.app",
+  "appName": "EndoAI",
+  "webDir": "build",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

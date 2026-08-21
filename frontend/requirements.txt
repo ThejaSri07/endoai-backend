@@ -1,0 +1,24 @@
+# EndoAI — Python ML Pipeline Requirements
+# Install with:  pip install -r requirements.txt
+
+# Core ML
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Medical imaging I/O
+nibabel>=5.1.0
+SimpleITK>=2.3.0
+
+# Image processing / morphology
+scikit-image>=0.22.0
+scipy>=1.11.0
+
+# API backend
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# Utilities
+numpy>=1.26.0
+tqdm>=4.66.0
