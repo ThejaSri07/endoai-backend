@@ -152,13 +152,7 @@ function Upload() {
     if (!rawFiles || rawFiles.length === 0) return;
     const all = Array.from(rawFiles);
 
-    const valid = all.filter(f => {
-      const name = f.name.toLowerCase();
-      return name.endsWith(".dcm") || name.endsWith(".nii") || name.endsWith(".nii.gz") ||
-             name.endsWith(".nrrd") || name.endsWith(".mha") || name.endsWith(".mhd") ||
-             name.endsWith(".zip") || name.endsWith(".jpg") || name.endsWith(".jpeg") ||
-             name.endsWith(".png") || f.type.startsWith("image/");
-    });
+    const valid = all;
 
     if (valid.length === 0) {
       setError("Please select a CBCT scan (.zip, .dcm), X-ray photo, or image file.");
