@@ -405,12 +405,40 @@ export async function apiAnalyze({ files, patientId, tooth, notes, caseId }) {
   }
 }
 
+const FALLBACK_SECURITY_QUESTIONS = [
+  "What is the name of your first dental clinic or hospital?",
+  "In what city did you complete your dental degree?",
+  "What was the name of your first mentor in endodontics?",
+  "What was your childhood nickname?",
+  "What is the name of the street you grew up on?",
+  "What was the make and model of your first car?",
+  "What was your favorite subject in dental school?",
+  "What is your mother's maiden name?",
+  "What is the name of your first pet?"
+];
+
 // ── Security Questions (for registration) ─────────────────────
 export async function apiGetSecurityQuestionsRandom() {
-  const res = await fetch(`${BASE_URL}/auth/security-questions/random`);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || "Failed to load questions");
-  return data;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${BASE_URL}/auth/security-questions/random`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.questions) && data.questions.length >= 3) {
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn("Using offline fallback security questions:", e);
+  }
+
+  // Instant fallback questions
+  const shuffled = [...FALLBACK_SECURITY_QUESTIONS].sort(() => 0.5 - Math.random());
+  return {
+    questions: shuffled.slice(0, 3)
+  };
 }
 
 // ── Forgot Password Step 1: Verify email → returns questions ──

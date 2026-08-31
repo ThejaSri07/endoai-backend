@@ -122,10 +122,19 @@ function Login() {
     setQLoading(true);
     try {
       const res = await apiGetSecurityQuestionsRandom();
-      setQuestions(res.questions || []);
+      setQuestions(res?.questions || [
+        "What is the name of your first dental clinic or hospital?",
+        "In what city did you complete your dental degree?",
+        "What was the name of your first mentor in endodontics?"
+      ]);
       setAnswers(["", "", ""]);
     } catch {
-      showAlert("error", "Failed to load questions. Please try again.");
+      setQuestions([
+        "What is the name of your first dental clinic or hospital?",
+        "In what city did you complete your dental degree?",
+        "What was the name of your first mentor in endodontics?"
+      ]);
+      setAnswers(["", "", ""]);
     } finally {
       setQLoading(false);
     }
