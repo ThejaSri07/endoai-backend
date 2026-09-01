@@ -9,18 +9,19 @@ import { SkeletonTable } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
 import jsPDF from "jspdf";
 
+import { exportPdfDirect } from "../utils/pdfExport";
+
 function Reports() {
   const navigate      = useNavigate();
   const toast         = useToast();
   const [cases, setCases]     = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedReport, setSelectedReport] = useState(null);
 
   useEffect(() => {
     getUserCases().then(c => { setCases(c || []); setLoading(false); });
   }, []);
 
-  const handleDownload = (c) => {
+  const handleDownload = async (c) => {
     const doc  = new jsPDF();
     const risk = c.risk || c.result?.risk || "—";
     const r    = c.result || c;
@@ -122,31 +123,8 @@ function Reports() {
     doc.text("© 2026 EndoAI · HIPAA Compliant · Secure Access", 14, 286);
 
     const filename = `EndoAI_Report_${c.case_id || c.caseId || "Report"}.pdf`;
-    try {
-      const blob = doc.output("blob");
-      const file = new File([blob], filename, { type: "application/pdf" });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({
-          files: [file],
-          title: "EndoAI Clinical Report",
-          text: `EndoAI Clinical Report - ${filename}`,
-        }).then(() => {
-          toast("Report opened successfully!", "success");
-        }).catch(err => {
-          if (err.name !== "AbortError") {
-            doc.save(filename);
-            toast("PDF report downloaded!", "success");
-          }
-        });
-        return;
-      }
-    } catch (e) {
-      console.warn("Share API fallback:", e);
-    }
-
-    doc.save(filename);
-    toast("PDF report downloaded!", "success");
+    await exportPdfDirect(doc, filename);
+    toast("PDF downloaded to your device!", "success");
   };
 
   return (
@@ -221,11 +199,11 @@ function Reports() {
                       style={{ padding: "6px 12px", background: "var(--surface)", color: "var(--primary)", border: "1.5px solid var(--border)", fontSize: "12px" }}>
                       View
                     </button>
-                    <button onClick={() => setSelectedReport(c)}
+                    <button onClick={() => handleDownload(c)}
                       className="btn btn-primary"
                       style={{ padding: "6px 12px", fontSize: "12px" }}>
                       <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                      PDF Report
+                      PDF
                     </button>
                   </div>
                 </div>
@@ -234,91 +212,6 @@ function Reports() {
           </div>
         </div>
       </div>
-
-      {/* Clinical Report Preview Modal */}
-      {selectedReport && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
-          <div className="card" style={{ width: "100%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto", padding: "24px", boxShadow: "var(--shadow-lg)", background: "var(--surface)", border: "1.5px solid var(--border)" }}>
-            
-            {/* Modal Header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "14px", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "var(--primary-glow)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--primary)" }}>
-                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                </div>
-                <div>
-                  <h3 style={{ fontSize: "16px", fontWeight: "700", margin: 0 }}>Clinical Assessment Report</h3>
-                  <span style={{ fontSize: "11.5px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{selectedReport.case_id || selectedReport.caseId}</span>
-                </div>
-              </div>
-              <button onClick={() => setSelectedReport(null)} style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "var(--text-muted)", lineHeight: 1 }}>×</button>
-            </div>
-
-            {/* Clinical Content */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px", fontSize: "13px" }}>
-              
-              {/* Case Summary Card */}
-              <div style={{ background: "var(--bg)", padding: "12px 14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  <div><span style={{ color: "var(--text-muted)" }}>Patient:</span> <strong>{selectedReport.patient_id || selectedReport.patientId || "—"}</strong></div>
-                  <div><span style={{ color: "var(--text-muted)" }}>Tooth:</span> <strong>Tooth #{selectedReport.tooth}</strong></div>
-                  <div><span style={{ color: "var(--text-muted)" }}>Date:</span> <strong>{selectedReport.upload_date || selectedReport.uploadDate || "Recent"}</strong></div>
-                  <div><span style={{ color: "var(--text-muted)" }}>Risk:</span> <strong style={{ color: (selectedReport.risk || selectedReport.result?.risk) === "High" ? "var(--danger)" : (selectedReport.risk || selectedReport.result?.risk) === "Low" ? "var(--success)" : "var(--warning)" }}>{selectedReport.risk || selectedReport.result?.risk || "Moderate"}</strong></div>
-                </div>
-              </div>
-
-              {/* Volumetric Measurements */}
-              <div>
-                <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Volumetric 3D Measurements</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
-                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Schneider Curvature</div>
-                    <div style={{ fontSize: "15px", fontWeight: "700", color: "var(--primary-light)" }}>{selectedReport.result?.curvature ?? selectedReport.curvature ?? 24.8}°</div>
-                  </div>
-                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
-                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Canal Count</div>
-                    <div style={{ fontSize: "15px", fontWeight: "700", color: "var(--primary-light)" }}>{selectedReport.result?.n_canals ?? selectedReport.n_canals ?? 3} Canals</div>
-                  </div>
-                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
-                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Canal Length</div>
-                    <div style={{ fontSize: "15px", fontWeight: "700" }}>{selectedReport.result?.canal_length ?? selectedReport.canal_length ?? 21.3} mm</div>
-                  </div>
-                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
-                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Dentin Thickness</div>
-                    <div style={{ fontSize: "15px", fontWeight: "700" }}>{selectedReport.result?.dentin ?? selectedReport.dentin ?? 1.59} mm</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Treatment Recommendation */}
-              <div>
-                <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Clinical Protocol Recommendations</div>
-                <div style={{ background: "var(--bg)", padding: "12px", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <div><strong>Suggested Taper:</strong> {selectedReport.result?.taper || "0.04"}</div>
-                  <div><strong>Target Apical Size:</strong> {selectedReport.result?.apical || "#25"}</div>
-                  <div><strong>Irrigation Protocol:</strong> {selectedReport.result?.irrigation || "5.25% NaOCl + 17% EDTA"}</div>
-                  <div><strong>Obturation Method:</strong> {selectedReport.result?.obturation || "Continuous Wave Warm Gutta-Percha"}</div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Actions */}
-            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-              <button type="button" onClick={() => window.print()} className="btn" style={{ flex: 1, padding: "10px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-                Save as PDF / Print
-              </button>
-              <button type="button" onClick={() => handleDownload(selectedReport)} className="btn btn-primary" style={{ flex: 1, padding: "10px", fontSize: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                Export .PDF File
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
       <MobileNav />
     </div>
   );
