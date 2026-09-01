@@ -6,14 +6,13 @@ import MobileNav from "../components/MobileNav";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "../components/Toast";
 import jsPDF from "jspdf";
+import { exportPdfDirect } from "../utils/pdfExport";
 
 const RISK_CONFIG = {
   Low:      { color: "var(--success)", bg: "var(--success-bg)", icon: "✓" },
   Moderate: { color: "var(--warning)", bg: "var(--warning-bg)", icon: "⚠" },
   High:     { color: "var(--danger)",  bg: "var(--danger-bg)",  icon: "✕" },
 };
-
-import { exportPdfDirect } from "../utils/pdfExport";
 
 function Results() {
   const navigate = useNavigate();
