@@ -84,6 +84,7 @@ export async function apiGetPatients() {
   const uid = user ? user.id : null;
   const key = getPatientsKey();
 
+  let rawPatients = [];
   // 1. Direct Supabase Query (Filtered by user_id)
   try {
     const filter = uid ? `user_id=eq.${uid}&` : "";
@@ -92,35 +93,72 @@ export async function apiGetPatients() {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        localStorage.setItem(key, JSON.stringify(data));
-        return data;
+        rawPatients = data;
       }
     }
   } catch (e) {
     console.warn("Supabase patient fetch failed, falling back to local:", e);
   }
 
-  // 2. Local fallback strictly for this user
-  try {
-    return JSON.parse(localStorage.getItem(key)) || [];
-  } catch {
-    return [];
+  if (rawPatients.length === 0) {
+    try {
+      rawPatients = JSON.parse(localStorage.getItem(key)) || [];
+    } catch {
+      rawPatients = [];
+    }
   }
+
+  // Deduplicate by name + phone or patient_id
+  const seen = new Set();
+  const deduped = [];
+  for (const p of rawPatients) {
+    const nameKey = (p.name || "").trim().toLowerCase();
+    const phoneKey = (p.phone || "").trim();
+    const idKey = (p.patient_id || p.id || "").trim();
+    const comboKey = phoneKey && phoneKey !== "—" ? `${nameKey}_${phoneKey}` : (nameKey || idKey);
+    
+    if (nameKey && !seen.has(comboKey)) {
+      seen.add(comboKey);
+      deduped.push(p);
+    }
+  }
+
+  localStorage.setItem(key, JSON.stringify(deduped));
+  return deduped;
 }
 
 export async function apiCreatePatient(patient) {
   const user = getCurrentUser();
   const uid = user ? user.id : null;
+  const key = getPatientsKey();
+  const patName = (patient.name || "").trim();
+  const patPhone = (patient.phone || "").trim();
   const patIdStr = patient.patient_id || patient.id || ("P-" + Date.now().toString().slice(-4));
   const ageInt = patient.age ? parseInt(patient.age, 10) : null;
+
+  if (!patName || patName === "Unknown Patient") {
+    return patient;
+  }
+
+  // Check if patient already exists in local list
+  const currentPatients = JSON.parse(localStorage.getItem(key)) || [];
+  const existing = currentPatients.find(p => 
+    (p.patient_id && p.patient_id === patIdStr) ||
+    (patPhone && p.phone === patPhone) ||
+    (p.name && p.name.trim().toLowerCase() === patName.toLowerCase() && patPhone && p.phone === patPhone)
+  );
+
+  if (existing) {
+    return existing;
+  }
 
   const payload = {
     user_id: uid,
     patient_id: patIdStr,
-    name: patient.name || "Unknown Patient",
+    name: patName,
     age: isNaN(ageInt) ? null : ageInt,
     gender: patient.gender || "Other",
-    phone: patient.phone || "",
+    phone: patPhone,
     email: patient.email || "",
     history: patient.history || ""
   };
@@ -136,9 +174,8 @@ export async function apiCreatePatient(patient) {
       const savedArr = await res.json();
       if (Array.isArray(savedArr) && savedArr.length > 0) {
         const saved = savedArr[0];
-        const local = JSON.parse(localStorage.getItem(getPatientsKey())) || [];
-        const updated = [saved, ...local.filter(p => p.id !== saved.id && p.patient_id !== saved.patient_id)];
-        localStorage.setItem(getPatientsKey(), JSON.stringify(updated));
+        const updated = [saved, ...currentPatients.filter(p => p.id !== saved.id && p.patient_id !== saved.patient_id)];
+        localStorage.setItem(key, JSON.stringify(updated));
         return saved;
       }
     }
@@ -152,9 +189,8 @@ export async function apiCreatePatient(patient) {
     id: patient.id || `local_${Date.now()}`,
     created_at: new Date().toISOString(),
   };
-  const local = JSON.parse(localStorage.getItem(getPatientsKey())) || [];
-  const updated = [fallback, ...local.filter(p => p.id !== fallback.id && p.patient_id !== fallback.patient_id)];
-  localStorage.setItem(getPatientsKey(), JSON.stringify(updated));
+  const updated = [fallback, ...currentPatients.filter(p => p.id !== fallback.id && p.patient_id !== fallback.patient_id)];
+  localStorage.setItem(key, JSON.stringify(updated));
   return fallback;
 }
 

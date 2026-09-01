@@ -236,31 +236,7 @@ function Patients() {
   useEffect(() => {
     async function loadPatients() {
       const serverPatients = (await apiGetPatients()) || [];
-      const localCases = JSON.parse(localStorage.getItem("endoai_local_cases") || "[]");
-      
-      const merged = [...serverPatients];
-      
-      // Auto-discover patients from case records if not already in patient list
-      localCases.forEach(c => {
-        const pId = c.patientId || c.patient_id;
-        const pName = c.patientName || pId;
-        if (pId && !merged.find(p => p.id === pId || p.patient_id === pId || p.name === pName)) {
-          const discovered = {
-            id: pId,
-            patient_id: pId,
-            name: pName,
-            age: 35,
-            gender: "Male",
-            phone: "—",
-            email: "—",
-            history: `CBCT Tooth #${c.tooth || "—"} scan analyzed on ${c.uploadDate || c.upload_date || "recent"}`,
-            created_at: new Date().toISOString()
-          };
-          merged.push(discovered);
-        }
-      });
-
-      setPatients(merged);
+      setPatients(serverPatients);
       setLoading(false);
     }
     loadPatients();
