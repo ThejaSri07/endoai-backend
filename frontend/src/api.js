@@ -194,10 +194,25 @@ export async function apiCreatePatient(patient) {
   return fallback;
 }
 
-export async function apiDeletePatient(id) {
+export async function apiDeletePatient(id, name, patientId) {
+  const user = getCurrentUser();
+  const uid = user ? user.id : null;
+  const key = getPatientsKey();
+
   // 1. Delete from Supabase
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/patients?or=(id.eq.${id},patient_id.eq.${id})`, {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    let url = `${SUPABASE_URL}/rest/v1/patients?`;
+    if (isUuid) {
+      url += `id=eq.${id}`;
+    } else if (patientId) {
+      url += `patient_id=eq.${patientId}`;
+    } else {
+      url += `or=(name.eq.${encodeURIComponent(name || id)},patient_id.eq.${id})`;
+    }
+    if (uid) url += `&user_id=eq.${uid}`;
+
+    await fetch(url, {
       method: "DELETE",
       headers: SUPA_HEADERS,
     });
@@ -206,9 +221,25 @@ export async function apiDeletePatient(id) {
   }
 
   // 2. Remove locally
-  const patients = JSON.parse(localStorage.getItem(getPatientsKey())) || [];
-  const filtered = patients.filter(p => p.id !== id && p.patient_id !== id);
-  localStorage.setItem(getPatientsKey(), JSON.stringify(filtered));
+  try {
+    const patients = JSON.parse(localStorage.getItem(key)) || [];
+    const filtered = patients.filter(p => 
+      p.id !== id && 
+      p.patient_id !== id && 
+      p.patient_id !== patientId && 
+      p.name !== name && 
+      p.name !== id
+    );
+    localStorage.setItem(key, JSON.stringify(filtered));
+  } catch (e) {
+    console.warn("Local patient delete error:", e);
+  }
+
+  // 3. Purge legacy demo case cache permanently
+  try {
+    localStorage.removeItem("endoai_local_cases");
+  } catch (e) {}
+
   return { success: true };
 }
 

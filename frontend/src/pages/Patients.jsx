@@ -257,11 +257,12 @@ function Patients() {
     }
   };
 
-  const handleDelete = async (id, name) => {
+  const handleDelete = async (id, name, patientId) => {
     if (!window.confirm(`Delete patient "${name}"? This cannot be undone.`)) return;
-    setDeleting(id);
-    await apiDeletePatient(id);
-    setPatients(prev => prev.filter(p => p.id !== id));
+    const targetId = id || patientId || name;
+    setDeleting(targetId);
+    await apiDeletePatient(id, name, patientId);
+    setPatients(prev => prev.filter(p => p.id !== id && p.patient_id !== patientId && p.name !== name));
     setDeleting(null);
     toast("Patient deleted", "info");
   };
@@ -393,10 +394,10 @@ function Patients() {
                                 className="btn btn-primary" style={{ padding: "5px 9px", fontSize: "11.5px" }}>
                                 New Scan
                               </button>
-                              <button onClick={() => handleDelete(p.id, p.name)}
-                                disabled={deleting === p.id}
-                                style={{ padding: "5px 10px", background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger)", borderRadius: "var(--radius-sm)", fontSize: "11.5px", fontWeight: "600", cursor: "pointer", opacity: deleting === p.id ? 0.5 : 1 }}>
-                                {deleting === p.id ? "…" : "Delete"}
+                              <button onClick={() => handleDelete(p.id, p.name, p.patient_id)}
+                                disabled={deleting === (p.id || p.patient_id || p.name)}
+                                style={{ padding: "5px 10px", background: "var(--danger-bg)", color: "var(--danger)", border: "1px solid var(--danger)", borderRadius: "var(--radius-sm)", fontSize: "11.5px", fontWeight: "600", cursor: "pointer", opacity: deleting === (p.id || p.patient_id || p.name) ? 0.5 : 1 }}>
+                                {deleting === (p.id || p.patient_id || p.name) ? "…" : "Delete"}
                               </button>
                             </div>
                           </td>
