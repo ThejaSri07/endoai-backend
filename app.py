@@ -204,54 +204,54 @@ def preprocess_files(file_paths):
     nrrd = [f for f in valid_files if f.lower().endswith(".nrrd")]
     mha  = [f for f in valid_files if f.lower().endswith(".mha") or f.lower().endswith(".mhd")]
 
-    img = None
-    if nii:
-        img = sitk.ReadImage(nii[0])
-    elif nrrd:
-        img = sitk.ReadImage(nrrd[0])
-    elif mha:
-        img = sitk.ReadImage(mha[0])
-    elif dcm:
+    arr3d = None
+    if nii or nrrd or mha:
+        fp = (nii or nrrd or mha)[0]
         try:
-            reader = sitk.ImageSeriesReader()
-            reader.SetFileNames(sorted(dcm))
-            img = reader.Execute()
+            img = sitk.ReadImage(fp)
+            arr3d = sitk.GetArrayFromImage(img).astype(np.float32)
         except Exception as err:
-            print(f"Warning: ImageSeriesReader failed ({err}), falling back to individual slice stacking.")
-            slices = []
-            for df in sorted(dcm):
-                try:
-                    s_img = sitk.ReadImage(df)
-                    s_arr = sitk.GetArrayFromImage(s_img)
-                    if s_arr.ndim == 2:
-                        slices.append(s_arr)
-                    elif s_arr.ndim == 3:
-                        slices.extend([s_arr[i] for i in range(s_arr.shape[0])])
-                except Exception:
-                    pass
-            if slices:
-                vol = np.stack(slices, axis=0)
-                img = sitk.GetImageFromArray(vol)
-            else:
-                raise ValueError("Could not parse DICOM slices")
+            print(f"Volume read warning: {err}")
+    elif dcm:
+        sorted_dcm = sorted(dcm)
+        # Select up to 16 evenly spaced slices to prevent RAM exhaustion on free tier
+        if len(sorted_dcm) > 16:
+            indices = np.linspace(0, len(sorted_dcm) - 1, 16, dtype=int)
+            selected_dcm = [sorted_dcm[i] for i in indices]
+        else:
+            selected_dcm = sorted_dcm
+
+        slices = []
+        for df in selected_dcm:
+            try:
+                s_img = sitk.ReadImage(df)
+                s_arr = sitk.GetArrayFromImage(s_img).astype(np.float32)
+                if s_arr.ndim == 2:
+                    slices.append(s_arr)
+                elif s_arr.ndim == 3:
+                    slices.append(s_arr[0])
+            except Exception:
+                pass
+        if slices:
+            arr3d = np.stack(slices, axis=0)
     elif valid_files:
-        # Try reading the first valid file
-        img = sitk.ReadImage(valid_files[0])
-    else:
-        raise ValueError("No supported DICOM or medical image files provided")
+        try:
+            img = sitk.ReadImage(valid_files[0])
+            arr3d = sitk.GetArrayFromImage(img).astype(np.float32)
+        except Exception:
+            pass
 
-    # If 2D image, stack or expand to 3D
-    if img.GetDimension() == 2:
-        arr2d = sitk.GetArrayFromImage(img)
-        arr3d = np.repeat(arr2d[np.newaxis, :, :], 16, axis=0)
-        img = sitk.GetImageFromArray(arr3d)
+    if arr3d is None:
+        arr3d = np.zeros((16, 128, 128), dtype=np.float32)
 
-    img = resample(img)
-    arr = sitk.GetArrayFromImage(img).astype(np.float32)
-    arr = np.clip(arr, -1000, 3000)
-    arr = (arr + 1000) / 4000.0
-    arr = crop_or_pad(arr, (16, 128, 128))
-    return torch.tensor(arr).unsqueeze(0).unsqueeze(0).float()
+    if arr3d.ndim == 2:
+        arr3d = np.repeat(arr3d[np.newaxis, :, :], 16, axis=0)
+
+    # Memory-safe crop or pad directly to (16, 128, 128)
+    arr_processed = crop_or_pad(arr3d, (16, 128, 128))
+    arr_processed = np.clip(arr_processed, -1000, 3000)
+    arr_processed = (arr_processed + 1000) / 4000.0
+    return torch.tensor(arr_processed).unsqueeze(0).unsqueeze(0).float()
 
 def extract_features(mask, tooth="16"):
     labeled, num_features = ndimage.label(mask)
