@@ -656,7 +656,7 @@ function Upload() {
                   )}
 
                   {/* Multi-photo & Multi-file input */}
-                  <input ref={fileInputRef}   type="file" multiple accept="*/*, application/zip, application/x-zip-compressed, application/octet-stream, application/dicom, .dcm, .zip, .nii, .nrrd, .jpg, .jpeg, .png, image/*" onChange={handleFileChange} style={{ display: "none" }} />
+                  <input ref={fileInputRef}   type="file" multiple onChange={handleFileChange} style={{ display: "none" }} />
                   <input ref={folderInputRef} type="file" multiple webkitdirectory="" directory="" mozdirectory="" onChange={handleFolderChange} style={{ display: "none" }} />
                 </div>
 
