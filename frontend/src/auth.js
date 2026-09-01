@@ -37,7 +37,7 @@ export async function getUserCases() {
   } catch {
     const user = _getCurrentUser();
     if (!user) return [];
-    return JSON.parse(localStorage.getItem("endoai_cases_" + user.id)) || JSON.parse(localStorage.getItem("endoai_local_cases")) || [];
+    return JSON.parse(localStorage.getItem("endoai_cases_" + user.id)) || [];
   }
 }
 

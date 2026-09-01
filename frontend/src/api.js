@@ -82,15 +82,17 @@ function getPatientsKey() {
 export async function apiGetPatients() {
   const user = getCurrentUser();
   const uid = user ? user.id : null;
+  const key = getPatientsKey();
 
-  // 1. Direct Supabase Query (Works across all Web & Mobile clients)
+  // 1. Direct Supabase Query (Filtered by user_id)
   try {
-    const url = `${SUPABASE_URL}/rest/v1/patients?select=*&order=created_at.desc`;
+    const filter = uid ? `user_id=eq.${uid}&` : "";
+    const url = `${SUPABASE_URL}/rest/v1/patients?${filter}select=*&order=created_at.desc`;
     const res = await fetch(url, { headers: SUPA_HEADERS });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        localStorage.setItem(getPatientsKey(), JSON.stringify(data));
+        localStorage.setItem(key, JSON.stringify(data));
         return data;
       }
     }
@@ -98,9 +100,9 @@ export async function apiGetPatients() {
     console.warn("Supabase patient fetch failed, falling back to local:", e);
   }
 
-  // 2. Local fallback
+  // 2. Local fallback strictly for this user
   try {
-    return JSON.parse(localStorage.getItem(getPatientsKey())) || [];
+    return JSON.parse(localStorage.getItem(key)) || [];
   } catch {
     return [];
   }
@@ -236,11 +238,10 @@ export async function apiSaveCase(caseData) {
 
   // 2. Save locally for instant UI update & offline support
   try {
-    const key = uid ? `endoai_cases_${uid}` : "endoai_local_cases";
+    const key = uid ? `endoai_cases_${uid}` : "endoai_cases_guest";
     const local = JSON.parse(localStorage.getItem(key)) || [];
     const updated = [caseData, ...local.filter(c => (c.caseId || c.case_id) !== cId)];
     localStorage.setItem(key, JSON.stringify(updated));
-    localStorage.setItem("endoai_local_cases", JSON.stringify(updated));
   } catch (e) {
     console.warn("saveLocalCase error:", e);
   }
@@ -256,14 +257,16 @@ export function saveLocalCase(caseData) {
 export async function apiGetCases() {
   const user = getCurrentUser();
   const uid = user ? user.id : null;
+  const key = uid ? `endoai_cases_${uid}` : "endoai_cases_guest";
 
-  // 1. Direct Supabase Query on case_summary view
+  // 1. Direct Supabase Query on case_summary view filtered by user_id
   try {
-    const url = `${SUPABASE_URL}/rest/v1/case_summary?select=*&order=upload_date.desc`;
+    const filter = uid ? `user_id=eq.${uid}&` : "";
+    const url = `${SUPABASE_URL}/rest/v1/case_summary?${filter}select=*&order=upload_date.desc`;
     const res = await fetch(url, { headers: SUPA_HEADERS });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         // Normalize fields for Dashboard, History, and Reports
         const normalized = data.map(c => ({
           ...c,
@@ -291,8 +294,7 @@ export async function apiGetCases() {
           }
         }));
 
-        if (uid) localStorage.setItem(`endoai_cases_${uid}`, JSON.stringify(normalized));
-        localStorage.setItem("endoai_local_cases", JSON.stringify(normalized));
+        localStorage.setItem(key, JSON.stringify(normalized));
         return normalized;
       }
     }
@@ -300,11 +302,9 @@ export async function apiGetCases() {
     console.warn("Supabase case_summary fetch failed, falling back to local:", e);
   }
 
-  // 2. Local fallback
+  // 2. Local fallback strictly for this user
   try {
-    const key = uid ? `endoai_cases_${uid}` : "endoai_local_cases";
-    const local = JSON.parse(localStorage.getItem(key)) || JSON.parse(localStorage.getItem("endoai_local_cases")) || [];
-    return local;
+    return JSON.parse(localStorage.getItem(key)) || [];
   } catch {
     return [];
   }
