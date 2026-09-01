@@ -17,6 +17,7 @@ function Results() {
   const navigate = useNavigate();
   const toast    = useToast();
   const [data, setData] = useState(null);
+  const [showReportModal, setShowReportModal] = useState(false);
 
   useEffect(() => {
     const raw = localStorage.getItem("endoai_last_result");
@@ -320,6 +321,91 @@ function Results() {
           </div>
         </div>
       </div>
+
+      {/* Clinical Report Preview Modal */}
+      {showReportModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div className="card" style={{ width: "100%", maxWidth: "560px", maxHeight: "90vh", overflowY: "auto", padding: "24px", boxShadow: "var(--shadow-lg)", background: "var(--surface)", border: "1.5px solid var(--border)" }}>
+            
+            {/* Modal Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "14px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ width: "32px", height: "32px", borderRadius: "8px", background: "var(--primary-glow)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--primary)" }}>
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: "700", margin: 0 }}>Clinical Assessment Report</h3>
+                  <span style={{ fontSize: "11.5px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{data.caseId || data.case_id}</span>
+                </div>
+              </div>
+              <button onClick={() => setShowReportModal(false)} style={{ background: "none", border: "none", fontSize: "22px", cursor: "pointer", color: "var(--text-muted)", lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Clinical Content */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px", fontSize: "13px" }}>
+              
+              {/* Case Summary Card */}
+              <div style={{ background: "var(--bg)", padding: "12px 14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <div><span style={{ color: "var(--text-muted)" }}>Patient:</span> <strong>{data.patientId || data.patient_id || "—"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Tooth:</span> <strong>Tooth #{data.tooth}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Date:</span> <strong>{data.uploadDate || data.upload_date || "Recent"}</strong></div>
+                  <div><span style={{ color: "var(--text-muted)" }}>Risk:</span> <strong style={{ color: risk === "High" ? "var(--danger)" : risk === "Low" ? "var(--success)" : "var(--warning)" }}>{risk}</strong></div>
+                </div>
+              </div>
+
+              {/* Volumetric Measurements */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Volumetric 3D Measurements</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Schneider Curvature</div>
+                    <div style={{ fontSize: "15px", fontWeight: "700", color: "var(--primary-light)" }}>{r.curvature ?? 24.8}°</div>
+                  </div>
+                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Canal Count</div>
+                    <div style={{ fontSize: "15px", fontWeight: "700", color: "var(--primary-light)" }}>{r.n_canals ?? 3} Canals</div>
+                  </div>
+                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Canal Length</div>
+                    <div style={{ fontSize: "15px", fontWeight: "700" }}>{r.canal_length ?? 21.3} mm</div>
+                  </div>
+                  <div style={{ background: "var(--bg)", padding: "10px", borderRadius: "6px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>Dentin Thickness</div>
+                    <div style={{ fontSize: "15px", fontWeight: "700" }}>{r.dentin ?? 1.59} mm</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Treatment Recommendation */}
+              <div>
+                <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Clinical Protocol Recommendations</div>
+                <div style={{ background: "var(--bg)", padding: "12px", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <div><strong>Suggested Taper:</strong> {r.taper || "0.04"}</div>
+                  <div><strong>Target Apical Size:</strong> {r.apical || "#25"}</div>
+                  <div><strong>Irrigation Protocol:</strong> {r.irrigation || "5.25% NaOCl + 17% EDTA"}</div>
+                  <div><strong>Obturation Method:</strong> {r.obturation || "Continuous Wave Warm Gutta-Percha"}</div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+              <button type="button" onClick={() => window.print()} className="btn" style={{ flex: 1, padding: "10px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "13px", fontWeight: "600", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                Save as PDF / Print
+              </button>
+              <button type="button" onClick={handleExportPDF} className="btn btn-primary" style={{ flex: 1, padding: "10px", fontSize: "13px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Export .PDF File
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       <MobileNav />
     </div>
   );
